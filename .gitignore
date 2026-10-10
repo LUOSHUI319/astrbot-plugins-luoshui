@@ -4,3 +4,4 @@ __pycache__/
 *.log
 .DS_Store
 Thumbs.db
+plugins/astrbot_plugin_wallpaper_luoshui/bin/ffmpeg.exe
