@@ -35,7 +35,7 @@ CONFIG_GROUPS: dict[str, tuple[str, ...]] = {
     "rotation": ("mode", "active_collection", "fixed_item", "switch_interval"),
     "playback": ("enable_video", "video_sound", "video_width", "video_crf", "keep_audio"),
     "source": ("folders", "auto_scan", "recursive"),
-    "advanced": ("apply_on_start", "watch_config", "debug_log"),
+    "advanced": ("apply_on_start", "watch_config", "debug_log", "ffmpeg_auto_install"),
 }
 TOP_LEVEL_KEYS = ("enabled",)
 
@@ -56,6 +56,8 @@ class WallpaperAPI:
             ("/upload", self.handle_upload, ["POST"]),
             ("/job", self.handle_job, ["GET"]),
             ("/item/delete", self.handle_delete_item, ["POST"]),
+            ("/items/batch", self.handle_batch_items, ["POST"]),
+            ("/ffmpeg", self.handle_ffmpeg, ["GET", "POST"]),
             ("/item/update", self.handle_update_item, ["POST"]),
             ("/collection/save", self.handle_save_collection, ["POST"]),
             ("/collection/delete", self.handle_delete_collection, ["POST"]),
@@ -354,6 +356,99 @@ class WallpaperAPI:
         if ok:
             self.plugin.apply_now()
         return json_response({"success": ok, "state": self._state()})
+
+    async def handle_batch_items(self):
+        """壁纸库里的批量操作：批量删除、批量加进轮换集。"""
+        payload = await request.json(default={}) or {}
+        action = str(payload.get("action") or "").strip().lower()
+        raw_ids = payload.get("ids") or []
+        if isinstance(raw_ids, str):
+            raw_ids = [raw_ids]
+        ids = [str(i).strip() for i in raw_ids if str(i).strip()]
+        if not ids:
+            return json_response({"success": False, "message": "还没选中壁纸"})
+
+        if action in {"delete", "remove"}:
+            loop = asyncio.get_running_loop()
+            done: list[str] = []
+            missing: list[str] = []
+            for item_id in ids:
+                ok = await loop.run_in_executor(None, self.store.delete_item, item_id)
+                if ok:
+                    done.append(item_id)
+                else:
+                    missing.append(item_id)
+            if done:
+                self.plugin.apply_now()
+            message = f"删掉 {len(done)} 张" + (f"，{len(missing)} 张没找着" if missing else "")
+            return json_response(
+                {"success": True, "done": done, "missing": missing, "message": message, "state": self._state()}
+            )
+
+        if action in {"collect", "add"}:
+            key = str(payload.get("key") or "").strip()
+            coll = self.store.collection_by_key(key)
+            if not coll:
+                return json_response({"success": False, "message": "找不到这个轮换集"})
+            have = list(coll.get("items") or [])
+            added = 0
+            for item_id in ids:
+                if item_id not in have:
+                    have.append(item_id)
+                    added += 1
+            coll["items"] = have
+            self.store.save_lib()
+            message = f"{added} 张加进「{coll.get('name')}」"
+            return json_response({"success": True, "added": added, "message": message, "state": self._state()})
+
+        return json_response({"success": False, "message": "不支持这个批量操作"})
+
+    async def handle_ffmpeg(self):
+        """检查 / 自动安装 ffmpeg。"""
+        payload = await request.json(default={}) or {}
+        action = str(payload.get("action") or "").strip().lower()
+        store = self.store
+
+        if action in {"install", "download"}:
+            if store.refresh_ffmpeg():
+                return json_response(
+                    {"success": True, "ffmpeg": store.ffmpeg, "source": store.ffmpeg_source(), "message": "已经有 ffmpeg 了", "stats": store.stats()}
+                )
+            job_id = store.jobs.create("安装 ffmpeg", total=1)
+            asyncio.create_task(self._run_ffmpeg_install(job_id))
+            return json_response({"success": True, "job_id": job_id})
+
+        found = store.refresh_ffmpeg()
+        return json_response(
+            {
+                "success": True,
+                "ffmpeg": found or "",
+                "source": store.ffmpeg_source(),
+                "message": "ffmpeg 就绪" if found else "还没找到 ffmpeg",
+                "stats": store.stats(),
+            }
+        )
+
+    async def _run_ffmpeg_install(self, job_id: str) -> None:
+        store = self.store
+        loop = asyncio.get_running_loop()
+
+        def log(message: str) -> None:
+            logger.info(f"[壁纸工坊] {message}")
+            store.jobs.log(job_id, message)
+
+        store.jobs.log(job_id, "开始检查 ffmpeg")
+        try:
+            got = await loop.run_in_executor(None, lambda: store.install_ffmpeg(log))
+        except Exception as exc:
+            logger.error(f"[壁纸工坊] 安装 ffmpeg 失败: {exc}")
+            got = None
+        store.jobs.update(job_id, done=1)
+        store.jobs.finish(
+            job_id,
+            result={"ffmpeg": got or "", "state": self._state()},
+            message="ffmpeg 装好了" if got else "没装上，手动把 ffmpeg.exe 放进插件目录的 bin 文件夹也行",
+        )
 
     async def handle_update_item(self):
         payload = await request.json(default={}) or {}

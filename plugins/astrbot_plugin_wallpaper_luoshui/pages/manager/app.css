@@ -242,3 +242,43 @@ input[type="range"] { width: 100%; }
 .split { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
 .box { border: 1px solid var(--wp-line); border-radius: 12px; padding: 14px; }
 .box h3 { margin: 0 0 10px; font-size: 14px; }
+
+/* ---- 批量操作工具栏（壁纸库搜索、扫描结果） ---- */
+.toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  border: 1px solid var(--wp-line);
+  border-radius: 12px;
+  background: rgba(14, 18, 26, .88);
+  backdrop-filter: blur(8px);
+}
+body[data-theme="light"] .toolbar { background: rgba(255, 255, 255, .92); }
+.toolbar input.grow { flex: 1 1 200px; min-width: 160px; }
+.toolbar select { width: auto; min-width: 104px; }
+.toolbar .switch { font-size: 12px; }
+
+/* ---- 壁纸卡片上的勾选框 ---- */
+.card .thumb .pick {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: rgba(8, 10, 15, .6);
+  border: 1px solid rgba(255, 255, 255, .28);
+  cursor: pointer;
+}
+body[data-theme="light"] .card .thumb .pick { background: rgba(255, 255, 255, .78); border-color: rgba(0, 0, 0, .18); }
+.card .thumb .pick input { width: 15px; height: 15px; margin: 0; cursor: pointer; }

@@ -22,13 +22,14 @@ from .wp_api import WallpaperAPI
 from .wp_core import (
     DEFAULTS,
     PLUGIN_NAME,
+    BUNDLED_FFMPEG_DIR,
     JobManager,
     WallpaperStore,
     flatten_config,
     safe_name,
 )
 
-PLUGIN_VERSION = "v1.0.6"
+PLUGIN_VERSION = "v1.0.7"
 
 UI_THEME_KEYS = ("ui_text_color", "ui_sub_color")
 
@@ -66,6 +67,7 @@ class WallpaperStudio(Star):
         self.last_apply: dict | None = None
         self._sig = ""
         self._task: asyncio.Task | None = None
+        self._ff_task: asyncio.Task | None = None
         self._closed = False
 
     # ------------------------------------------------------------------ 配置
@@ -190,6 +192,28 @@ class WallpaperStudio(Star):
 
     # ------------------------------------------------------------------ 生命周期
 
+    async def _ensure_ffmpeg(self) -> None:
+        """第一次装插件时检查有没有 ffmpeg：插件包自带就直接用，没有就自动装一份。"""
+
+        def log(message: str) -> None:
+            logger.info(f"[壁纸工坊] {message}")
+
+        try:
+            loop = asyncio.get_running_loop()
+            got = await loop.run_in_executor(None, lambda: self.store.install_ffmpeg(log))
+            if got:
+                logger.info(f"[壁纸工坊] ffmpeg 就绪（{self.store.ffmpeg_source()}）：{got}")
+            else:
+                logger.warning(
+                    f"[壁纸工坊] 没找到 ffmpeg，动态壁纸转不了码。"
+                    f"手动把 ffmpeg.exe 放进 {BUNDLED_FFMPEG_DIR} 或者 AstrBot 根目录，"
+                    f"也可以在插件页面的「上传壁纸」里点自动安装"
+                )
+        except asyncio.CancelledError:
+            return
+        except Exception as exc:
+            logger.error(f"[壁纸工坊] 检查 ffmpeg 出错: {exc}")
+
     async def initialize(self) -> None:
         raw = self.read_config_raw()
         if not raw:
@@ -200,6 +224,8 @@ class WallpaperStudio(Star):
             f"[壁纸工坊] 已加载，壁纸 {self.store.stats()['total']} 张，"
             f"ffmpeg={'有' if self.store.ffmpeg else '无'}，根目录={self.root}"
         )
+        if not self.store.ffmpeg and self.config_flat.get("ffmpeg_auto_install", True):
+            self._ff_task = asyncio.create_task(self._ensure_ffmpeg())
         if self.config_flat.get("apply_on_start", True):
             self.apply_now()
         if self.config_flat.get("watch_config", True):
@@ -210,6 +236,9 @@ class WallpaperStudio(Star):
         if self._task:
             self._task.cancel()
             self._task = None
+        if self._ff_task:
+            self._ff_task.cancel()
+            self._ff_task = None
 
     # ------------------------------------------------------------------ 命令
 

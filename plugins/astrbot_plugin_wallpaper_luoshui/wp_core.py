@@ -16,14 +16,26 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 import threading
 import time
+import urllib.request
 import uuid
+import zipfile
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
 PLUGIN_NAME = "astrbot_plugin_wallpaper_luoshui"
 DISPLAY_NAME = "洛水壁纸工坊"
+
+PLUGIN_DIR = Path(__file__).resolve().parent
+BUNDLED_FFMPEG_DIR = PLUGIN_DIR / "bin"
+
+# 插件包里没带 ffmpeg 时（比如用 git 装的）、机器上也没有时，按顺序试这几个源自动装一份
+FFMPEG_DOWNLOAD_URLS = (
+    "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip",
+    "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
+)
 
 MARK_START = "<!-- astrbot-wallpaper:start -->"
 MARK_END = "<!-- astrbot-wallpaper:end -->"
@@ -60,6 +72,7 @@ DEFAULTS: dict[str, Any] = {
     "apply_on_start": True,
     "watch_config": True,
     "debug_log": False,
+    "ffmpeg_auto_install": True,
 }
 
 COLOR_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$")
@@ -186,6 +199,84 @@ class JobManager:
 
 # --------------------------------------------------------------------------- 主类
 
+def download_ffmpeg(target_dir: Path | None = None, log: Callable[[str], None] | None = None) -> Path | None:
+    """本机没有 ffmpeg 时，下一份静态编译版丢到插件包的 bin 目录里。
+
+    只在 Windows 上做（插件面向的 AstrBot 面板基本都在 Windows）。返回 ffmpeg.exe 的路径，
+    失败就返回 None，让调用方去提示用户手动放。
+    """
+
+    def say(message: str) -> None:
+        if not log:
+            return
+        try:
+            log(message)
+        except Exception:
+            pass
+
+    if os.name != "nt":
+        say("不是 Windows 系统，跳过自动安装 ffmpeg")
+        return None
+
+    target = Path(target_dir) if target_dir else BUNDLED_FFMPEG_DIR
+    exe = target / "ffmpeg.exe"
+    try:
+        if exe.exists() and exe.stat().st_size > 1024 * 1024:
+            return exe
+    except OSError:
+        pass
+
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+    except Exception as exc:
+        say(f"建不了 {target}：{exc}")
+        return None
+
+    reason = ""
+    with tempfile.TemporaryDirectory(prefix="astrwp_ffmpeg_") as tmp:
+        tmp_dir = Path(tmp)
+        for url in FFMPEG_DOWNLOAD_URLS:
+            try:
+                say(f"开始下载 ffmpeg：{url}")
+                zip_path = tmp_dir / "ffmpeg.zip"
+                req = urllib.request.Request(url, headers={"User-Agent": "AstrBot-WallpaperStudio"})
+                with urllib.request.urlopen(req, timeout=90) as resp, open(zip_path, "wb") as fh:
+                    shutil.copyfileobj(resp, fh, 1024 * 256)
+                if zip_path.stat().st_size < 1024 * 1024:
+                    reason = "下载到的文件不完整"
+                    continue
+                say("下载完成，正在解压")
+                with zipfile.ZipFile(zip_path) as zf:
+                    member = next(
+                        (
+                            name
+                            for name in zf.namelist()
+                            if name.replace("\\", "/").lower().endswith("bin/ffmpeg.exe")
+                        ),
+                        "",
+                    )
+                    if not member:
+                        reason = "压缩包里没有 ffmpeg.exe"
+                        continue
+                    tmp_exe = tmp_dir / "ffmpeg.exe"
+                    with zf.open(member) as src, open(tmp_exe, "wb") as dst:
+                        shutil.copyfileobj(src, dst, 1024 * 256)
+                if tmp_exe.stat().st_size < 1024 * 1024:
+                    reason = "解出来的 ffmpeg 不完整"
+                    continue
+                if exe.exists():
+                    exe.unlink()
+                tmp_exe.replace(exe)
+                say(f"ffmpeg 已就位：{exe}")
+                return exe
+            except Exception as exc:
+                reason = str(exc)
+                say(f"这一路失败了：{exc}")
+                continue
+    say(f"自动装 ffmpeg 没成功（{reason or '原因不明'}），手动把 ffmpeg.exe 放到 {target} 也行")
+    return None
+
+
 class WallpaperStore:
     def __init__(self, base_dir: Path, astrbot_root: Path, jobs: JobManager | None = None) -> None:
         self.base = Path(base_dir)
@@ -216,16 +307,52 @@ class WallpaperStore:
     # ---------------------------------------------------------------- 基础
 
     def _find_ffmpeg(self) -> str | None:
+        exe_name = "ffmpeg.exe" if os.name == "nt" else "ffmpeg"
         candidates = [
+            BUNDLED_FFMPEG_DIR / exe_name,
+            BUNDLED_FFMPEG_DIR / "ffmpeg.exe",
+            self.base / "bin" / exe_name,
             self.root / "ffmpeg.exe",
-            self.root / "bin" / "ffmpeg.exe",
+            self.root / "bin" / exe_name,
             self.root / "data" / "ffmpeg.exe",
         ]
         for cand in candidates:
-            if cand.exists():
-                return str(cand)
+            try:
+                if cand.exists() and cand.stat().st_size > 1024:
+                    return str(cand)
+            except OSError:
+                continue
         found = shutil.which("ffmpeg")
         return found or None
+
+    def ffmpeg_source(self) -> str:
+        """ffmpeg 是从哪来的，面板上要显示给用户看。"""
+        if not self.ffmpeg:
+            return ""
+        path = str(self.ffmpeg).lower()
+        for prefix, label in (
+            (str(BUNDLED_FFMPEG_DIR).lower(), "插件内置"),
+            (str(self.base).lower(), "插件数据目录"),
+            (str(self.root).lower(), "AstrBot 根目录"),
+        ):
+            if path.startswith(prefix):
+                return label
+        return "系统 PATH"
+
+    def refresh_ffmpeg(self) -> str | None:
+        self.ffmpeg = self._find_ffmpeg()
+        return self.ffmpeg
+
+    def install_ffmpeg(self, log: Callable[[str], None] | None = None) -> str | None:
+        """首次装插件时调一次：有就直接用，没有就自动装一份到插件包的 bin 目录。"""
+        if self.refresh_ffmpeg():
+            if log:
+                log(f"已经有 ffmpeg 了：{self.ffmpeg}")
+            return self.ffmpeg
+        got = download_ffmpeg(BUNDLED_FFMPEG_DIR, log=log)
+        if got:
+            self.ffmpeg = str(got)
+        return self.ffmpeg
 
     def _load_lib(self) -> dict:
         try:
@@ -379,7 +506,7 @@ class WallpaperStore:
 
     def transcode(self, src: Path, dst: Path, width: int = 1920, crf: int = 27, keep_audio: bool = False) -> tuple[bool, str]:
         if not self.ffmpeg:
-            return False, "没找到 ffmpeg，请把 ffmpeg.exe 放到 AstrBot 根目录"
+            return False, "没找到 ffmpeg，请把 ffmpeg.exe 放到插件目录的 bin 文件夹或 AstrBot 根目录"
         width = max(480, min(int(width or 1920), 3840))
         crf = max(14, min(int(crf or 27), 40))
         dst.parent.mkdir(parents=True, exist_ok=True)
@@ -1332,6 +1459,11 @@ class WallpaperStore:
             "images": sum(1 for i in items if i.get("kind") != "video"),
             "collections": len(self.collections()),
             "ffmpeg": self.ffmpeg or "",
+            "ffmpeg_source": self.ffmpeg_source(),
+            "ffmpeg_ok": bool(self.ffmpeg),
+            "ffmpeg_hint": ""
+            if self.ffmpeg
+            else f"没找到 ffmpeg，把 ffmpeg.exe 放到 {BUNDLED_FFMPEG_DIR} 或 AstrBot 根目录都行",
             "dist": str(self.dist),
             "index_html": str(self.index_html),
             "index_exists": self.index_html.exists(),

@@ -14,7 +14,8 @@
 
   var STATE = { items: [], collections: [], config: {}, stats: {}, last_apply: null };
   var TAB = "library";
-  var SCAN = { results: [], folderText: "", recursive: true };
+  var SCAN = { results: [], folderText: "", recursive: true, picked: {}, kind: "all" };
+  var LIB = { q: "", kind: "all", picked: {} };
   var JOB_TIMER = null;
   var THUMBS = {};
 
@@ -252,7 +253,7 @@
     if (applied) {
       parts.push(applied.applied ? "已应用 " + applied.count + " 张" : "未应用：" + (applied.reason || ""));
     }
-    parts.push(s.ffmpeg ? "ffmpeg 就绪" : "缺少 ffmpeg");
+    parts.push(s.ffmpeg ? "ffmpeg 就绪" + (s.ffmpeg_source ? "（" + s.ffmpeg_source + "）" : "") : "缺少 ffmpeg");
     statLine.textContent = parts.join(" · ");
   }
 
@@ -350,12 +351,39 @@
       .join("");
   }
 
-  function renderLibrary() {
-    var items = STATE.items || [];
+  function libraryPickedIds() {
+    return Object.keys(LIB.picked).filter(function (k) {
+      return LIB.picked[k];
+    });
+  }
+
+  function filteredItems() {
+    var q = String(LIB.q || "").trim().toLowerCase();
+    var kind = LIB.kind || "all";
+    return (STATE.items || []).filter(function (it) {
+      var itemKind = it.kind === "video" ? "video" : "image";
+      if (kind !== "all" && itemKind !== kind) return false;
+      if (!q) return true;
+      var hay = [
+        it.name,
+        it.file,
+        it.source,
+        it.note,
+        it.origin === "upload" ? "上传" : "扫描",
+        itemKind === "video" ? "动态 视频" : "静态 图片",
+      ]
+        .join(" ")
+        .toLowerCase();
+      return hay.indexOf(q) >= 0;
+    });
+  }
+
+  function libraryGrid() {
+    var items = filteredItems();
     if (!items.length) {
-      return '<div class="muted">壁纸库还是空的。先去「来源文件夹」扫描导入，或者到「上传壁纸」传几张。</div>';
+      return '<div class="muted">没有对上的壁纸，换个关键词，或者把筛选切回「全部」。</div>';
     }
-    var cards = items
+    return items
       .map(function (it) {
         var isVideo = it.kind === "video";
         var meta = [];
@@ -369,6 +397,8 @@
           '<img class="wp-thumb" data-id="' + esc(it.id) + '" alt="">' +
           '<span class="badge">' + (isVideo ? "动态" : "静态") + "</span>" +
           (it.sound ? '<span class="badge sound">有声</span>' : "") +
+          '<label class="pick" title="勾上这张"><input type="checkbox" data-role="lib-pick" data-id="' +
+          esc(it.id) + '"' + (LIB.picked[it.id] ? " checked" : "") + "></label>" +
           "</div>" +
           '<div class="info">' +
           '<div class="name" title="' + esc(it.name) + '">' + esc(it.name) + "</div>" +
@@ -389,24 +419,87 @@
         );
       })
       .join("");
+  }
+
+  function updateLibCount() {
+    var el = document.getElementById("wp-lib-count");
+    if (!el) return;
+    el.textContent =
+      "匹配 " + filteredItems().length + " 张，已勾 " + libraryPickedIds().length + " 张 · 批量操作只作用于勾上的";
+  }
+
+  function refreshLibGrid() {
+    var grid = document.getElementById("wp-lib-grid");
+    if (grid) grid.innerHTML = libraryGrid();
+    updateLibCount();
+    startThumbs();
+  }
+
+  function renderLibrary() {
+    var items = STATE.items || [];
+    if (!items.length) {
+      return '<div class="muted">壁纸库还是空的。先去「来源文件夹」扫描导入，或者到「上传壁纸」传几张。</div>';
+    }
     return (
+      '<div class="toolbar">' +
+      '<input type="text" id="wp-lib-q" class="grow" placeholder="搜壁纸：名字、文件名、来源路径" value="' + esc(LIB.q) + '">' +
+      '<select id="wp-lib-kind">' +
+      '<option value="all"' + (LIB.kind === "all" ? " selected" : "") + ">全部</option>" +
+      '<option value="video"' + (LIB.kind === "video" ? " selected" : "") + ">只看动态</option>" +
+      '<option value="image"' + (LIB.kind === "image" ? " selected" : "") + ">只看静态</option>" +
+      "</select>" +
+      '<button class="btn ghost small" data-act="lib-all">全选</button>' +
+      '<button class="btn ghost small" data-act="lib-none">全不选</button>' +
+      '<button class="btn ghost small" data-act="lib-invert">反选</button>' +
+      '<select data-act="lib-collect"><option value="">批量加入集合…</option>' + collectionOptions(null) + "</select>" +
+      '<button class="btn small danger" data-act="lib-delete">批量删除</button>' +
+      "</div>" +
       '<div class="row" style="margin-bottom:12px">' +
       '<button class="btn primary" data-act="apply">把当前轮换集全部应用到面板</button>' +
-      '<span class="muted">缩略图会一张张加载出来，点完应用面板上马上就换，不用刷新</span>' +
+      '<span class="muted" id="wp-lib-count"></span>' +
       "</div>" +
-      '<div class="grid">' + cards + "</div>"
+      '<div class="grid" id="wp-lib-grid">' + libraryGrid() + "</div>"
     );
   }
 
-  function renderSource() {
-    var cfg = STATE.config || {};
-    var folders = Array.isArray(cfg.folders) ? cfg.folders : [];
-    var text = SCAN.folderText || folders.join("\n");
-    var rows = (SCAN.results || [])
+  function scanPickedCount() {
+    return Object.keys(SCAN.picked).filter(function (k) {
+      return SCAN.picked[k];
+    }).length;
+  }
+
+  function visibleScanRows() {
+    var kind = SCAN.kind || "all";
+    return (SCAN.results || [])
       .map(function (r, idx) {
+        return { r: r, idx: idx };
+      })
+      .filter(function (x) {
+        if (kind === "all") return true;
+        return (x.r.kind === "video" ? "video" : "image") === kind;
+      });
+  }
+
+  function scanPickState(idx) {
+    if (SCAN.picked[idx] === undefined) {
+      var r = SCAN.results[idx] || {};
+      SCAN.picked[idx] = !r.imported;
+    }
+    return !!SCAN.picked[idx];
+  }
+
+  function scanRowsHtml() {
+    var rows = visibleScanRows();
+    if (!rows.length) {
+      return '<div class="muted" style="padding:12px">当前筛选下没有文件，把上面的显示切回「全部」看看。</div>';
+    }
+    return rows
+      .map(function (x) {
+        var r = x.r;
+        var idx = x.idx;
         return (
           '<div class="list-item">' +
-          '<input type="checkbox" data-role="scan-pick" data-idx="' + idx + '"' + (r.imported ? "" : " checked") + ">" +
+          '<input type="checkbox" data-role="scan-pick" data-idx="' + idx + '"' + (scanPickState(idx) ? " checked" : "") + ">" +
           '<img class="wp-thumb wp-mini" data-act="peek" data-path="' + esc(r.path) + '" alt="">' +
           '<span class="grow">' + esc(r.name) + '<br><span class="tag">' + esc(r.path) + "</span></span>" +
           '<span class="tag">' + (r.kind === "video" ? "动态" : "静态") + " · " + r.size + "MB</span>" +
@@ -415,6 +508,53 @@
         );
       })
       .join("");
+  }
+
+  function scanToolbar() {
+    return (
+      '<div class="toolbar">' +
+      '<span class="muted" id="wp-scan-count">显示 ' +
+      visibleScanRows().length +
+      " / " +
+      (SCAN.results || []).length +
+      " 个，已勾 " +
+      scanPickedCount() +
+      " 个</span>" +
+      '<select id="wp-scan-kind">' +
+      '<option value="all"' + (SCAN.kind === "all" ? " selected" : "") + ">全部</option>" +
+      '<option value="video"' + (SCAN.kind === "video" ? " selected" : "") + ">只看动态</option>" +
+      '<option value="image"' + (SCAN.kind === "image" ? " selected" : "") + ">只看静态</option>" +
+      "</select>" +
+      '<button class="btn ghost small" data-act="scan-all">全选</button>' +
+      '<button class="btn ghost small" data-act="scan-none">全不选</button>' +
+      '<button class="btn ghost small" data-act="scan-video">只选动态</button>' +
+      '<button class="btn ghost small" data-act="scan-image">只选静态</button>' +
+      '<label class="switch"><input type="checkbox" id="wp-import-sound"> 导入时保留声音</label>' +
+      '<button class="btn primary small" data-act="import">导入选中</button>' +
+      "</div>"
+    );
+  }
+
+  function refreshScanRows() {
+    var box = document.getElementById("wp-scan-rows");
+    if (box) box.innerHTML = scanRowsHtml();
+    var cnt = document.getElementById("wp-scan-count");
+    if (cnt) {
+      cnt.textContent =
+        "显示 " + visibleScanRows().length + " / " + (SCAN.results || []).length + " 个，已勾 " + scanPickedCount() + " 个";
+    }
+    if (!box) renderPanel();
+    startThumbs();
+  }
+
+  function renderSource() {
+    var cfg = STATE.config || {};
+    var folders = Array.isArray(cfg.folders) ? cfg.folders : [];
+    var text = SCAN.folderText || folders.join("\n");
+    var total = (SCAN.results || []).length;
+    var body = total
+      ? '<div class="list" id="wp-scan-rows">' + scanRowsHtml() + "</div>"
+      : '<div class="muted">点上面的「扫描」看看能识别到什么。视频会在导入时自动转成网页版 mp4。</div>';
     return (
       '<div class="field">' +
       '<label>壁纸数据文件夹（一行一个，支持 Wallpaper Engine 的 steamapps\\workshop\\content\\431960）</label>' +
@@ -424,18 +564,10 @@
       '<button class="btn" data-act="save-folders">保存路径</button>' +
       '<button class="btn primary" data-act="scan">扫描</button>' +
       "</div></div>" +
-      '<div class="field"><label>扫描结果（' + (SCAN.results || []).length + " 个）</label>" +
-      (rows ? '<p class="muted" style="margin-bottom:8px">缩略图滚到哪出到哪，点一下能放大看原图。导入完成会自动回「壁纸库」。</p>' : "") +
-      (rows ? '<div class="list">' + rows + "</div>" : '<div class="muted">点上面的「扫描」看看能识别到什么。视频会在导入时自动转成网页版 mp4。</div>') +
-      "</div>" +
-      (rows
-        ? '<div class="row">' +
-          '<label class="switch"><input type="checkbox" id="wp-import-sound"> 导入时保留声音</label>' +
-          '<button class="btn ghost" data-act="scan-all">全选</button>' +
-          '<button class="btn ghost" data-act="scan-none">全不选</button>' +
-          '<button class="btn primary" data-act="import">导入选中</button>' +
-          "</div>"
-        : "")
+      '<div class="field"><label>扫描结果（' + total + " 个）</label>" +
+      (total ? scanToolbar() : "") +
+      body +
+      "</div>"
     );
   }
 
@@ -456,10 +588,31 @@
       '<div class="muted" id="wp-job-log" style="margin-top:8px">转码要花点时间，视频越大越久。</div>' +
       "</div>" +
       '<div class="box"><h3>说明</h3>' +
+      ffmpegBox() +
       '<p class="muted">静态图会缩到 2560 宽以内；mp4 / webm / mov 会重新压成网页能播放的视频（勾了保留声音就带 aac 音轨）。</p>' +
       '<p class="muted">浏览器默认会拦截带声音的自动播放，所以开了声音之后需要在面板页面点一下才会响，右下角会出现一个小开关。</p>' +
-      '<p class="muted">转码用的是 AstrBot 根目录下的 ffmpeg.exe，没有的话插件会提示。</p>' +
       "</div></div>"
+    );
+  }
+
+  function ffmpegBox() {
+    var s = STATE.stats || {};
+    if (s.ffmpeg) {
+      return (
+        '<p class="muted">ffmpeg：已就绪（' +
+        esc(s.ffmpeg_source || "本机") +
+        "）<br>" +
+        esc(s.ffmpeg) +
+        "</p>"
+      );
+    }
+    return (
+      '<p class="muted">没检测到 ffmpeg，动态壁纸就转不了码。点下面的按钮自动装一份到插件包里，' +
+      "或者手动把 ffmpeg.exe 丢进插件目录的 bin 文件夹、AstrBot 根目录都行。</p>" +
+      '<div class="row" style="margin-bottom:10px">' +
+      '<button class="btn small primary" data-act="ffmpeg-install">自动安装 ffmpeg</button>' +
+      '<button class="btn small ghost" data-act="ffmpeg-check">重新检测</button>' +
+      "</div>"
     );
   }
 
@@ -724,24 +877,39 @@
       panel.innerHTML = '<div class="wp-loading">扫描中…</div>';
       var res3 = await post("scan", { folders: folders2, recursive: SCAN.recursive });
       SCAN.results = (res3 && res3.results) || [];
+      SCAN.picked = {};
       if (!SCAN.results.length) toast((res3 && res3.message) || "没扫到东西，检查一下路径");
       else toast("扫到 " + SCAN.results.length + " 个文件");
       renderPanel();
       return;
     }
 
-    if (act === "scan-all" || act === "scan-none") {
-      var want = act === "scan-all";
-      panel.querySelectorAll('[data-role="scan-pick"]').forEach(function (el2) {
-        el2.checked = want;
-      });
+    if (act === "scan-all" || act === "scan-none" || act === "scan-video" || act === "scan-image") {
+      var rows = visibleScanRows();
+      if (act === "scan-video" || act === "scan-image") {
+        // 只选动态 / 只选静态：先全部取消，再把对应类型勾上
+        Object.keys(SCAN.picked).forEach(function (k) {
+          SCAN.picked[k] = false;
+        });
+        rows.forEach(function (x) {
+          var isVideo = x.r.kind === "video";
+          if (act === "scan-video" ? isVideo : !isVideo) SCAN.picked[x.idx] = true;
+        });
+        toast(act === "scan-video" ? "只勾上动态壁纸了" : "只勾上静态壁纸了");
+      } else {
+        var want = act === "scan-all";
+        rows.forEach(function (x) {
+          SCAN.picked[x.idx] = want;
+        });
+      }
+      refreshScanRows();
       return;
     }
 
     if (act === "import") {
       var picked = [];
-      panel.querySelectorAll('[data-role="scan-pick"]').forEach(function (el3) {
-        if (el3.checked && SCAN.results[+el3.dataset.idx]) picked.push(SCAN.results[+el3.dataset.idx].path);
+      (SCAN.results || []).forEach(function (r, idx) {
+        if (SCAN.picked[idx]) picked.push(r.path);
       });
       if (!picked.length) return toast("先勾几条要导入的");
       var sound = (document.getElementById("wp-import-sound") || {}).checked || false;
@@ -756,6 +924,49 @@
         toast((res4 && res4.message) || "导入失败");
       }
       return;
+    }
+
+    if (act === "lib-all" || act === "lib-none" || act === "lib-invert") {
+      var list = filteredItems();
+      list.forEach(function (it) {
+        if (act === "lib-invert") LIB.picked[it.id] = !LIB.picked[it.id];
+        else LIB.picked[it.id] = act === "lib-all";
+      });
+      refreshLibGrid();
+      toast(
+        act === "lib-invert"
+          ? "反选好了"
+          : (act === "lib-all" ? "当前筛出来的都勾上了" : "全不选了")
+      );
+      return;
+    }
+
+    if (act === "lib-delete") {
+      var delIds = libraryPickedIds();
+      if (!delIds.length) return toast("先在壁纸库里勾几张");
+      if (!window.confirm("删掉勾选的 " + delIds.length + " 张壁纸？文件也会一起删掉，这个撤不回来")) return;
+      var delRes = await post("items/batch", { action: "delete", ids: delIds });
+      if (delRes && delRes.success) {
+        delIds.forEach(function (id) {
+          delete THUMBS["id:" + id];
+          LIB.picked[id] = false;
+        });
+        toast(delRes.message || "删掉了");
+      } else {
+        toast((delRes && delRes.message) || "批量删除失败");
+      }
+      return loadState();
+    }
+
+    if (act === "ffmpeg-check" || act === "ffmpeg-install") {
+      var ffRes = await post("ffmpeg", { action: act === "ffmpeg-install" ? "install" : "check" });
+      if (ffRes && ffRes.job_id) {
+        toast("开始下载 ffmpeg，装好会告诉你");
+        watchJob(ffRes.job_id, TAB);
+        return;
+      }
+      toast((ffRes && ffRes.message) || (ffRes && ffRes.ffmpeg ? "ffmpeg 就绪" : "还没找到 ffmpeg"));
+      return loadState();
     }
 
     if (act === "upload") {
@@ -879,6 +1090,7 @@
   });
 
   panel.addEventListener("click", function (e) {
+    if (e.target.closest("input, label.pick")) return;
     var btn = e.target.closest("[data-act]");
     if (!btn || btn.tagName === "SELECT") return;
     doAction(btn.dataset.act, btn.dataset.id, btn).catch(function (err) {
@@ -886,7 +1098,43 @@
     });
   });
 
-  panel.addEventListener("change", function (e) {
+  panel.addEventListener("change", async function (e) {
+    if (e.target.closest('[data-role="lib-pick"]')) {
+      LIB.picked[e.target.getAttribute("data-id")] = e.target.checked;
+      updateLibCount();
+      return;
+    }
+    if (e.target.closest('[data-role="scan-pick"]')) {
+      SCAN.picked[e.target.dataset.idx] = e.target.checked;
+      var cntEl = document.getElementById("wp-scan-count");
+      if (cntEl) {
+        cntEl.textContent =
+          "显示 " + visibleScanRows().length + " / " + (SCAN.results || []).length + " 个，已勾 " + scanPickedCount() + " 个";
+      }
+      return;
+    }
+    if (e.target.id === "wp-lib-kind") {
+      LIB.kind = e.target.value;
+      refreshLibGrid();
+      return;
+    }
+    if (e.target.id === "wp-scan-kind") {
+      SCAN.kind = e.target.value;
+      refreshScanRows();
+      return;
+    }
+    var bulkSel = e.target.closest('select[data-act="lib-collect"]');
+    if (bulkSel && bulkSel.value) {
+      var bulkIds = libraryPickedIds();
+      if (!bulkIds.length) {
+        bulkSel.value = "";
+        return toast("先在壁纸库里勾几张");
+      }
+      var bulkRes = await post("items/batch", { action: "collect", key: bulkSel.value, ids: bulkIds });
+      toast((bulkRes && bulkRes.message) || (bulkRes && bulkRes.success ? "加好了" : "加入集合失败"));
+      bulkSel.value = "";
+      return loadState();
+    }
     var sel = e.target.closest('select[data-act="collect"]');
     if (sel && sel.value) {
       var itemId = sel.dataset.id;
@@ -932,6 +1180,11 @@
   });
 
   panel.addEventListener("input", function (e) {
+    if (e.target.id === "wp-lib-q") {
+      LIB.q = e.target.value;
+      refreshLibGrid();
+      return;
+    }
     if (e.target.id === "wp-veil") {
       document.getElementById("wp-veil-val").textContent = e.target.value;
     }

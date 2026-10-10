@@ -205,6 +205,12 @@
         "type": "bool",
         "description": "输出调试日志",
         "default": false
+      },
+      "ffmpeg_auto_install": {
+        "type": "bool",
+        "description": "没有 ffmpeg 时自动装一份",
+        "hint": "插件默认已内置 ffmpeg（插件目录的 bin 文件夹）。如果那里面没有、机器上也没有，加载插件时会自动下一份静态编译版放进插件目录；不想联网下载就关掉，手动把 ffmpeg.exe 放进去也认",
+        "default": true
       }
     }
   }
