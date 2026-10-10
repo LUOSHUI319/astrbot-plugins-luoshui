@@ -1,0 +1,85 @@
+{
+  "basic": {
+    "description": "基础设置",
+    "type": "object",
+    "items": {
+      "enable": {
+        "description": "启用插件",
+        "type": "bool",
+        "default": true,
+        "hint": "总开关。关闭后指令和新人进群自动发卡都会停止。"
+      },
+      "auto_card_on_join": {
+        "description": "新人进群自动发卡",
+        "type": "bool",
+        "default": true,
+        "hint": "群里有人加入时，自动为该成员生成并发送资料卡。"
+      },
+      "cache_seconds": {
+        "description": "资料缓存秒数",
+        "type": "int",
+        "default": 600,
+        "hint": "同一个人在这个时间内重复查询会直接用缓存，避免频繁调用接口被风控。设为 0 表示不缓存。"
+      },
+      "extra_api": {
+        "description": "第三方资料接口",
+        "type": "string",
+        "default": "",
+        "hint": "可选。留空则只使用 OneBot 返回的字段和本地补充库。填写后会以 GET 请求访问，需返回 JSON，字段名不限，脚本会自动识别常见命名。"
+      },
+      "extra_api_token": {
+        "description": "第三方接口密钥",
+        "type": "string",
+        "default": "",
+        "hint": "可选。会以 Authorization: Bearer 的形式带上。"
+      }
+    }
+  },
+  "permissions": {
+    "description": "使用权限",
+    "type": "object",
+    "items": {
+      "allow_other_query": {
+        "description": "允许查询他人",
+        "type": "bool",
+        "default": true,
+        "hint": "关闭后普通成员只能查自己，管理员不受限制。"
+      },
+      "blocked_groups": {
+        "description": "禁用群号",
+        "type": "string",
+        "default": "",
+        "hint": "逗号或空格分隔，这些群里既不响应指令也不自动发卡。"
+      }
+    }
+  },
+  "style": {
+    "description": "卡片样式",
+    "type": "object",
+    "items": {
+      "theme": {
+        "description": "主题风格",
+        "type": "string",
+        "default": "box",
+        "options": [
+          "box",
+          "cute",
+          "classic",
+          "handwrite"
+        ],
+        "hint": "box 是复刻 astrbot_plugin_box 的手账风（白底、随机深色字、随机色粗边框、可爱手写字体），cute 是粉紫渐变卡，classic 是白底彩字信息卡，handwrite 是灰底手写风。"
+      },
+      "show_sign": {
+        "description": "显示个性签名",
+        "type": "bool",
+        "default": true
+      },
+      "unknown_text": {
+        "description": "字段缺失时显示",
+        "type": "string",
+        "default": "未知",
+        "hint": "接口和本地库都没有该字段时显示的文字。"
+      }
+    }
+  }
+}

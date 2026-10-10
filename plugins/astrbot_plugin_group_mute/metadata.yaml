@@ -1,0 +1,6 @@
+name: astrbot_plugin_group_mute
+display_name: 禁言小工具
+desc: 群内发「禁言 @某人 秒数」即可禁言，同时注册为 LLM 工具供机器人主动调用
+version: v1.0.0
+author: 洛水
+repo: null

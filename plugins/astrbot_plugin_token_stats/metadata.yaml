@@ -1,0 +1,52 @@
+name: astrbot_plugin_token_stats
+display_name: 会话用量统计
+desc: 查询某个会话当天/近7天/全部的 token 消耗、缓存命中率和估算花费
+help: '【指令】直接在私聊或群里发：
+
+  - /token 今天      本会话今天（只发 /token 也行）
+
+  - /token 7d        本会话近 7 天
+
+  - /token 30d       本会话近 30 天
+
+  - /token all       本会话全部时间
+
+  - /token 排行      今天所有会话的用量排行（带花费）
+
+  - /token 价目      看当前生效的模型单价表
+
+  - /token 帮助      显示用法
+
+
+  【别名】
+
+  用量 / token用量 / 消耗 / 缓存命中，后面接的参数一样
+
+
+  【说明】
+
+  参数写错会直接回一句用法，不会静默。
+
+  /token 查完会自动跟一行「估算花费」，多模型会按模型拆开列。
+
+
+  【原理】
+
+  读 AstrBot 主库 data/data_v4.db 的 provider_stats 表：
+
+  命中率 = token_input_cached / (token_input_cached + token_input_other)
+
+  花费 = 按 provider_model 分组，各段 token 乘单价再求和（元/百万 token）
+
+
+  【单价配置】
+
+  插件配置 →「模型单价」→ price_map 填 JSON，例如：
+
+  {"deepseek-flash": {"input": 1, "cached": 0.2, "output": 4}}
+
+  不填就用内置参考价，模型名匹配不到时用兜底单价。
+
+  '
+version: v1.1.0
+author: 洛水

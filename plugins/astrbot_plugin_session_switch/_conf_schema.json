@@ -1,0 +1,36 @@
+{
+  "switch_settings": {
+    "type": "object",
+    "description": "会话开关设置",
+    "items": {
+      "admin_only": {
+        "type": "bool",
+        "description": "只有管理员能用这个指令（关掉之后谁都能用）",
+        "default": true
+      },
+      "allowed_users": {
+        "type": "list",
+        "description": "额外允许使用的 QQ 号，管理员之外的白名单",
+        "default": ["3190568934"],
+        "items": {
+          "type": "string"
+        }
+      },
+      "default_duration": {
+        "type": "string",
+        "description": "不写时长时默认关多久，可选 today / forever",
+        "default": "today"
+      },
+      "check_interval": {
+        "type": "int",
+        "description": "到期检查间隔（秒），最小 5",
+        "default": 30
+      },
+      "also_disable_tts": {
+        "type": "bool",
+        "description": "关闭会话时是否一并关掉 TTS",
+        "default": false
+      }
+    }
+  }
+}

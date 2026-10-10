@@ -1,0 +1,79 @@
+{
+  "delay_settings": {
+    "type": "object",
+    "description": "延时设置",
+    "hint": "每条要发出去的回复都会先在这个区间里随机抽一个秒数，抽到多少就等多少秒再发。多条消息各抽各的。",
+    "items": {
+      "enabled": {
+        "type": "bool",
+        "description": "启用插件",
+        "default": true
+      },
+      "min_delay": {
+        "type": "int",
+        "description": "最小延时（秒）",
+        "default": 5,
+        "slider": {
+          "min": 0,
+          "max": 120,
+          "step": 1
+        }
+      },
+      "max_delay": {
+        "type": "int",
+        "description": "最大延时（秒）",
+        "hint": "比最小延时小的话就按最小延时发",
+        "default": 20,
+        "slider": {
+          "min": 0,
+          "max": 300,
+          "step": 1
+        }
+      },
+      "only_llm_result": {
+        "type": "bool",
+        "description": "只对大模型回复生效",
+        "hint": "关掉之后插件、指令之类的回复也会被延时",
+        "default": false
+      }
+    }
+  },
+  "scope_settings": {
+    "type": "object",
+    "description": "生效范围",
+    "items": {
+      "enable_private": {
+        "type": "bool",
+        "description": "私聊生效",
+        "default": true
+      },
+      "enable_group": {
+        "type": "bool",
+        "description": "群聊生效",
+        "default": true
+      },
+      "platforms": {
+        "type": "list",
+        "description": "生效平台",
+        "hint": "平台适配器名称，例如 aiocqhttp；留空表示所有平台",
+        "default": [
+          "aiocqhttp"
+        ],
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "debug_settings": {
+    "type": "object",
+    "description": "调试",
+    "items": {
+      "debug_log": {
+        "type": "bool",
+        "description": "输出抽到的延时日志",
+        "default": false
+      }
+    }
+  }
+}

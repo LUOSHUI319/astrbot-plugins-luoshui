@@ -1,0 +1,15 @@
+name: astrbot_plugin_user_card
+display_name: 用户卡片
+short_desc: 查询任意 QQ 用户资料，渲染成一张资料卡图片
+desc: 通过 OneBot 接口拉取 QQ 用户资料（昵称、性别、年龄、QQ 等级、注册时间、群等级、入群时间等），结合本地补充库与可选第三方接口补齐生日、星座、生肖、现居、职业、VIP
+  等字段，用 Pillow 渲染成资料卡图片。支持 @人、引用消息、直接发 QQ 号三种查询方式，并可在新人入群时自动发送该新成员的资料卡。
+author: 洛水
+version: 1.0.0
+repo: ''
+tags:
+- 资料卡
+- 用户信息
+- 群管理
+support_platforms:
+- aiocqhttp
+astrbot_version: '>=4.16'

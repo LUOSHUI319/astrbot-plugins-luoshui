@@ -1,0 +1,91 @@
+{
+  "quote_settings": {
+    "type": "object",
+    "description": "引用概率",
+    "hint": "控制机器人回复时按概率引用被回复的那条消息。注意：需先把 AstrBot 全局配置里的「回复时引用原消息」关掉，否则框架会无条件引用。",
+    "items": {
+      "enabled": {
+        "type": "bool",
+        "description": "启用插件",
+        "default": true
+      },
+      "probability": {
+        "type": "float",
+        "description": "引用概率",
+        "hint": "0~1 之间，0.1 表示平均十条回复里引用一条",
+        "default": 0.1,
+        "slider": {
+          "min": 0,
+          "max": 1,
+          "step": 0.01
+        }
+      },
+      "cooldown_seconds": {
+        "type": "int",
+        "description": "引用冷却（秒）",
+        "hint": "距离上次引用不足这个秒数就不引用，避免连着几条都带引用；0 表示不限制",
+        "default": 0,
+        "slider": {
+          "min": 0,
+          "max": 600,
+          "step": 5
+        }
+      },
+      "only_llm_result": {
+        "type": "bool",
+        "description": "只对大模型回复生效",
+        "hint": "关闭后插件的普通文本回复也会按概率带上引用",
+        "default": true
+      },
+      "min_text_chars": {
+        "type": "int",
+        "description": "最小文本长度",
+        "hint": "回复正文短于这个字数就不引用；0 表示不限制",
+        "default": 0,
+        "slider": {
+          "min": 0,
+          "max": 100,
+          "step": 1
+        }
+      }
+    }
+  },
+  "scope_settings": {
+    "type": "object",
+    "description": "生效范围",
+    "items": {
+      "enable_private": {
+        "type": "bool",
+        "description": "私聊生效",
+        "default": true
+      },
+      "enable_group": {
+        "type": "bool",
+        "description": "群聊生效",
+        "default": true
+      },
+      "platforms": {
+        "type": "list",
+        "description": "生效平台",
+        "hint": "平台适配器名称，例如 aiocqhttp；留空表示所有平台。不支持引用的平台会被自动跳过",
+        "default": [
+          "aiocqhttp"
+        ],
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "debug_settings": {
+    "type": "object",
+    "description": "调试",
+    "items": {
+      "debug_log": {
+        "type": "bool",
+        "description": "输出命中日志",
+        "default": false
+      }
+    }
+  }
+}

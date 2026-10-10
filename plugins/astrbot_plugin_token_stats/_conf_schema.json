@@ -1,0 +1,86 @@
+{
+  "stats_settings": {
+    "type": "object",
+    "description": "统计设置",
+    "items": {
+      "timezone_offset": {
+        "type": "int",
+        "description": "时区偏移（小时）",
+        "hint": "北京时间填 8。库里存的是 UTC 时间，靠这个偏移算出本地「今天」的起点",
+        "default": 8,
+        "slider": {
+          "min": -12,
+          "max": 14,
+          "step": 1
+        }
+      },
+      "rank_size": {
+        "type": "int",
+        "description": "排行显示条数",
+        "default": 10,
+        "slider": {
+          "min": 1,
+          "max": 50,
+          "step": 1
+        }
+      },
+      "show_cost": {
+        "type": "bool",
+        "description": "显示估算花费",
+        "hint": "按模型单价把 token 换算成钱，只是估算，账单以供应商后台为准",
+        "default": true
+      },
+      "currency": {
+        "type": "string",
+        "description": "货币符号",
+        "default": "¥"
+      }
+    }
+  },
+  "pricing_settings": {
+    "type": "object",
+    "description": "模型单价（估算花费用）",
+    "items": {
+      "price_map": {
+        "type": "text",
+        "description": "自定义单价表",
+        "hint": "JSON，单位是「元 / 百万 token」，键是模型名。例如 {\"deepseek-chat\": {\"input\": 2, \"cached\": 0.5, \"output\": 8}}。这里填的会覆盖内置参考价，cached 不填就默认等于 input",
+        "default": "",
+        "editor_mode": true
+      },
+      "default_input_price": {
+        "type": "float",
+        "description": "兜底输入单价（元/百万）",
+        "hint": "模型名不在表里的时候用这个",
+        "default": 2.0
+      },
+      "default_cached_price": {
+        "type": "float",
+        "description": "兜底缓存命中单价（元/百万）",
+        "default": 0.5
+      },
+      "default_output_price": {
+        "type": "float",
+        "description": "兜底输出单价（元/百万）",
+        "default": 8.0
+      }
+    }
+  },
+  "scope_settings": {
+    "type": "object",
+    "description": "使用范围",
+    "items": {
+      "allow_group": {
+        "type": "bool",
+        "description": "允许在群聊查询",
+        "hint": "关掉后只能在私聊用",
+        "default": true
+      },
+      "admin_only": {
+        "type": "bool",
+        "description": "只允许管理员使用",
+        "default": false
+      }
+    }
+  }
+}

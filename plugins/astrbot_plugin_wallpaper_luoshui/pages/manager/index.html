@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>洛水壁纸工坊</title>
+  <link rel="stylesheet" href="./app.css" />
+  <!-- AstrBot 插件页面桥接：必须放在自己的脚本前面。
+       src 会被面板自动重写成带 asset_token 的地址；不写这一行的话，
+       框架会把它插到 </body> 前（也就是我们脚本之后），导致拿不到 bridge。 -->
+  <script src="/api/plugin/page/bridge-sdk.js"></script>
+
+</head>
+<body>
+  <div class="wp-wrap">
+    <header class="wp-head">
+      <div class="wp-brand">
+        <span class="wp-logo">洛</span>
+        <div>
+          <h1>洛水壁纸工坊</h1>
+          <p id="wp-stat" class="wp-sub">正在读取状态…</p>
+        </div>
+      </div>
+      <div class="wp-head-actions">
+        <button class="btn" data-act="apply">立即应用</button>
+        <button class="btn ghost" data-act="reload">刷新数据</button>
+      </div>
+    </header>
+
+    <nav class="wp-tabs" id="wp-tabs">
+      <button data-tab="library" class="on">壁纸库</button>
+      <button data-tab="source">来源文件夹</button>
+      <button data-tab="upload">上传壁纸</button>
+      <button data-tab="collections">轮换集</button>
+      <button data-tab="appearance">外观与播放</button>
+    </nav>
+
+    <section class="wp-panel" id="wp-panel">
+      <div class="wp-loading">加载中…</div>
+    </section>
+  </div>
+
+  <div class="wp-modal" id="wp-modal" hidden>
+    <div class="wp-modal-box">
+      <div class="wp-modal-head">
+        <span id="wp-modal-title">预览</span>
+        <button class="btn ghost small" data-act="close-modal">关闭</button>
+      </div>
+      <div class="wp-modal-body" id="wp-modal-body"></div>
+    </div>
+  </div>
+
+  <div class="wp-toast" id="wp-toast" hidden></div>
+
+  <script src="./app.js"></script>
+</body>
+</html>

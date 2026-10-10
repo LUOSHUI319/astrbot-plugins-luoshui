@@ -1,0 +1,5 @@
+name: astrbot_plugin_quote_probability
+version: v1.0.0
+author: 洛水
+desc: 按概率给机器人回复加上引用（Reply），概率、冷却、平台和会话范围都可调，默认引用概率 0.1
+display_name: 引用概率

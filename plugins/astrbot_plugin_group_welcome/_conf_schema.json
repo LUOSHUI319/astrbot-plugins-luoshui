@@ -1,0 +1,26 @@
+{
+  "settings": {
+    "type": "object",
+    "description": "欢迎设置",
+    "items": {
+      "enabled": {
+        "type": "bool",
+        "description": "总开关",
+        "hint": "关掉之后不再发任何欢迎",
+        "default": true
+      },
+      "welcome_text": {
+        "type": "text",
+        "description": "欢迎文案",
+        "hint": "支持 {nickname} 占位，会替换成新人的群名片或昵称",
+        "default": "欢迎 {nickname} 进群\n先花两分钟把群文件、群公告和群相册翻一遍，新手教程和常见问题的答案都在里面，照着走一遍比直接提问快得多"
+      },
+      "group_whitelist": {
+        "type": "text",
+        "description": "生效的群号",
+        "hint": "留空表示所有群都发。多个群号用逗号或换行隔开",
+        "default": ""
+      }
+    }
+  }
+}

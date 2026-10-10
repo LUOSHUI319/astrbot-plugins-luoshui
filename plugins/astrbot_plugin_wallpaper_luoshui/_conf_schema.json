@@ -1,0 +1,211 @@
+{
+  "enabled": {
+    "type": "bool",
+    "description": "启用壁纸注入",
+    "hint": "关掉之后插件不会再改动面板样式，下一次应用时会自动移除注入的代码块",
+    "default": true
+  },
+  "appearance": {
+    "type": "object",
+    "description": "外观（界面字体颜色 / 遮罩 / 模糊）",
+    "hint": "这几项在插件页面里也能改，改完立即生效",
+    "items": {
+      "text_color": {
+        "type": "string",
+        "description": "界面字体颜色",
+        "hint": "十六进制颜色，例如 #e8f0ff；留空表示不修改字体颜色",
+        "default": ""
+      },
+      "force_text_color": {
+        "type": "bool",
+        "description": "强制覆盖全部文字颜色",
+        "hint": "打开后按钮、标签、输入框里的字也会被改成上面的颜色",
+        "default": false
+      },
+      "veil_opacity": {
+        "type": "float",
+        "description": "遮罩透明度",
+        "hint": "压在壁纸上面的一层白色遮罩，越大文字越清楚、壁纸越淡",
+        "default": 0.1,
+        "slider": {
+          "min": 0.0,
+          "max": 0.9,
+          "step": 0.01
+        }
+      },
+      "blur": {
+        "type": "int",
+        "description": "壁纸模糊程度（px）",
+        "default": 0,
+        "slider": {
+          "min": 0,
+          "max": 40,
+          "step": 1
+        }
+      },
+      "background_color": {
+        "type": "string",
+        "description": "页面底色",
+        "hint": "壁纸加载出来之前显示的颜色",
+        "default": "#080a0f"
+      },
+      "text_shadow_off": {
+        "type": "bool",
+        "description": "去掉文字发光和阴影",
+        "hint": "壁纸背景下的文字发虚、带光晕时保持打开",
+        "default": true
+      },
+      "fade_ms": {
+        "type": "int",
+        "description": "切换过渡时长（毫秒）",
+        "hint": "换壁纸时的交叉淡化时长，0 表示直接切换不做过渡",
+        "default": 900,
+        "slider": {
+          "min": 0,
+          "max": 2500,
+          "step": 100
+        }
+      },
+      "ui_text_color": {
+        "type": "string",
+        "description": "插件页面文字颜色",
+        "hint": "壁纸工坊自己页面里的文字颜色，十六进制例如 #e6edf3；留空用默认色",
+        "default": ""
+      },
+      "ui_sub_color": {
+        "type": "string",
+        "description": "插件页面次要文字颜色",
+        "hint": "路径、说明、提示这类小字的颜色；留空会自动跟着上面的主色变淡",
+        "default": ""
+      }
+    }
+  },
+  "rotation": {
+    "type": "object",
+    "description": "轮换",
+    "items": {
+      "mode": {
+        "type": "string",
+        "description": "轮换模式",
+        "options": ["random", "sequence", "fixed"],
+        "option_labels": ["每次随机", "按顺序轮换", "固定一张"],
+        "default": "random"
+      },
+      "active_collection": {
+        "type": "string",
+        "description": "当前轮换壁纸集",
+        "hint": "填集合名字；留空表示全部壁纸都参与轮换",
+        "default": ""
+      },
+      "fixed_item": {
+        "type": "string",
+        "description": "固定壁纸",
+        "hint": "模式选「固定一张」时生效，填壁纸名字或 ID",
+        "default": ""
+      },
+      "switch_interval": {
+        "type": "int",
+        "description": "自动切换间隔（秒）",
+        "hint": "0 表示只在每次刷新页面时换一张，大于 0 会定时自动切",
+        "default": 0,
+        "slider": {
+          "min": 0,
+          "max": 3600,
+          "step": 10
+        }
+      }
+    }
+  },
+  "playback": {
+    "type": "object",
+    "description": "动态壁纸播放",
+    "items": {
+      "enable_video": {
+        "type": "bool",
+        "description": "启用动态壁纸（mp4）",
+        "hint": "关掉之后只显示静态图，比较省显卡",
+        "default": true
+      },
+      "video_sound": {
+        "type": "bool",
+        "description": "动态壁纸开启声音",
+        "hint": "浏览器会拦截带声音的自动播放，开了之后需要点一下页面才会出声",
+        "default": false
+      },
+      "video_width": {
+        "type": "int",
+        "description": "转码宽度",
+        "hint": "壁纸视频会被压到这个宽度，越大越清晰也越大",
+        "default": 1920,
+        "slider": {
+          "min": 960,
+          "max": 2560,
+          "step": 160
+        }
+      },
+      "video_crf": {
+        "type": "int",
+        "description": "视频质量（CRF，越小越清晰）",
+        "default": 27,
+        "slider": {
+          "min": 18,
+          "max": 34,
+          "step": 1
+        }
+      },
+      "keep_audio": {
+        "type": "bool",
+        "description": "转码时保留音轨",
+        "hint": "关掉会更小；想开声音的话这里要打开",
+        "default": false
+      }
+    }
+  },
+  "source": {
+    "type": "object",
+    "description": "壁纸来源文件夹",
+    "items": {
+      "folders": {
+        "type": "list",
+        "description": "壁纸数据文件夹",
+        "hint": "支持 Wallpaper Engine 的 steamapps\\workshop\\content\\431960 目录，会自动递归识别 mp4 和图片",
+        "default": [],
+        "items": {
+          "type": "string"
+        }
+      },
+      "auto_scan": {
+        "type": "bool",
+        "description": "插件启动时自动扫描来源文件夹",
+        "default": false
+      },
+      "recursive": {
+        "type": "bool",
+        "description": "递归扫描子文件夹",
+        "default": true
+      }
+    }
+  },
+  "advanced": {
+    "type": "object",
+    "description": "高级",
+    "items": {
+      "apply_on_start": {
+        "type": "bool",
+        "description": "插件加载时自动应用一次壁纸",
+        "default": true
+      },
+      "watch_config": {
+        "type": "bool",
+        "description": "监听配置变化并自动重新应用",
+        "hint": "在插件设置里改完字体颜色/透明度/模糊后不用手动点应用",
+        "default": true
+      },
+      "debug_log": {
+        "type": "bool",
+        "description": "输出调试日志",
+        "default": false
+      }
+    }
+  }
+}
