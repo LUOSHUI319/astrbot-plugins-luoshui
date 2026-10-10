@@ -19,7 +19,7 @@
 | 用户卡片 | `astrbot_plugin_user_card` | v1.0.0 | 查询 QQ 用户资料并渲染成一张资料卡图片 |
 | 禁言小工具 | `astrbot_plugin_group_mute` | v1.0.0 | 群里发「禁言 @某人 秒数」，也注册成 LLM 工具 |
 | 进群欢迎 | `astrbot_plugin_group_welcome` | v1.0.0 | 新人进群自动发欢迎语 |
-| 洛水壁纸工坊 | `astrbot_plugin_wallpaper_luoshui` | v1.0.7 | 给 AstrBot 面板换静态/动态壁纸，参数都能在页面里调 |
+| 洛水壁纸工坊 | `astrbot_plugin_wallpaper_luoshui` | v1.0.8 | 给 AstrBot 面板换静态/动态壁纸，参数都能在页面里调 |
 
 所有插件的 `author` 都写的是「洛水」。
 
