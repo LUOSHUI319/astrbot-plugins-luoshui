@@ -208,6 +208,8 @@
         config: res.config || {},
         stats: res.stats || {},
         last_apply: res.last_apply || null,
+        pending_deletes: res.pending_deletes || [],
+        duplicates: res.duplicates || 0,
       };
       var serverMain = String(STATE.config.ui_text_color || "").trim();
       var serverSub = String(STATE.config.ui_sub_color || "").trim();
@@ -424,8 +426,10 @@
   function updateLibCount() {
     var el = document.getElementById("wp-lib-count");
     if (!el) return;
+    var pend = (STATE.pending_deletes || []).length;
     el.textContent =
-      "匹配 " + filteredItems().length + " 张，已勾 " + libraryPickedIds().length + " 张 · 批量操作只作用于勾上的";
+      "匹配 " + filteredItems().length + " 张，已勾 " + libraryPickedIds().length + " 张 · 批量操作只作用于勾上的" +
+      (pend ? " · 有 " + pend + " 个文件被占用，正在自动重删" : "");
   }
 
   function refreshLibGrid() {
@@ -453,6 +457,9 @@
       '<button class="btn ghost small" data-act="lib-invert">反选</button>' +
       '<select data-act="lib-collect"><option value="">批量加入集合…</option>' + collectionOptions(null) + "</select>" +
       '<button class="btn small danger" data-act="lib-delete">批量删除</button>' +
+      (Number(STATE.duplicates) > 0
+        ? '<button class="btn small" data-act="lib-dedupe">清理重复(' + STATE.duplicates + ")</button>"
+        : "") +
       "</div>" +
       '<div class="row" style="margin-bottom:12px">' +
       '<button class="btn primary" data-act="apply">把当前轮换集全部应用到面板</button>' +
@@ -796,6 +803,28 @@
 
   // ------------------------------------------------------------------ 动作
 
+  // 浏览器把 window.confirm 拦掉的时候（勾了「阻止此页面的其他对话框」），
+  // 删除会变成什么都不发生。改成按钮自己点两次确认，不靠浏览器弹窗。
+  function armConfirm(el, word) {
+    if (!el) return true;
+    if (el.getAttribute("data-armed") === "1") {
+      el.removeAttribute("data-armed");
+      if (el.getAttribute("data-old-text")) el.textContent = el.getAttribute("data-old-text");
+      return true;
+    }
+    el.setAttribute("data-armed", "1");
+    if (!el.getAttribute("data-old-text")) el.setAttribute("data-old-text", el.textContent);
+    el.textContent = "再点一次" + word;
+    toast("再点一下才" + word + "，防止点错");
+    setTimeout(function () {
+      if (el.getAttribute("data-armed") === "1") {
+        el.removeAttribute("data-armed");
+        if (el.getAttribute("data-old-text")) el.textContent = el.getAttribute("data-old-text");
+      }
+    }, 4000);
+    return false;
+  }
+
   async function doAction(act, id, el) {
     if (act === "peek") {
       var peekPath = el ? el.getAttribute("data-path") : "";
@@ -839,10 +868,11 @@
     }
 
     if (act === "delete-item") {
-      if (!window.confirm("删除这张壁纸？文件也会一起删掉")) return;
-      await post("item/delete", { id: id });
+      if (!armConfirm(el, "删除")) return;
+      var delOne = await post("item/delete", { id: id });
       delete THUMBS["id:" + id];
-      toast("删掉了");
+      if (delOne && delOne.message) toast(delOne.message);
+      else toast(delOne && delOne.success ? "删掉了" : "没删掉，刷新一下再试");
       return loadState();
     }
 
@@ -944,7 +974,7 @@
     if (act === "lib-delete") {
       var delIds = libraryPickedIds();
       if (!delIds.length) return toast("先在壁纸库里勾几张");
-      if (!window.confirm("删掉勾选的 " + delIds.length + " 张壁纸？文件也会一起删掉，这个撤不回来")) return;
+      if (!armConfirm(el, "删掉勾选的 " + delIds.length + " 张")) return;
       var delRes = await post("items/batch", { action: "delete", ids: delIds });
       if (delRes && delRes.success) {
         delIds.forEach(function (id) {
@@ -955,6 +985,15 @@
       } else {
         toast((delRes && delRes.message) || "批量删除失败");
       }
+      return loadState();
+    }
+
+    if (act === "lib-dedupe") {
+      var dupN = Number(STATE.duplicates) || 0;
+      if (!dupN) return toast("壁纸库里没有重复的");
+      if (!armConfirm(el, "清掉 " + dupN + " 张重复的")) return;
+      var dupRes = await post("items/batch", { action: "dedupe", ids: [] });
+      toast((dupRes && dupRes.message) || "清理完了");
       return loadState();
     }
 

@@ -84,6 +84,12 @@ class WallpaperAPI:
         return self.plugin.store
 
     def _state(self) -> dict:
+        # 有删不掉的文件排队时顺手再试一把，页面轮询状态就能把它清掉
+        if self.store.pending_unlinks():
+            try:
+                self.store.retry_pending_unlinks()
+            except Exception:
+                pass
         items = []
         for item in self.store.items():
             entry = dict(item)
@@ -106,6 +112,8 @@ class WallpaperAPI:
             "config": cfg,
             "stats": self.store.stats(),
             "last_apply": getattr(self.plugin, "last_apply", None),
+            "pending_deletes": [e.get("rel") for e in self.store.pending_unlinks()],
+            "duplicates": len(self.store.duplicate_ids()),
         }
 
     # ------------------------------------------------------------ 基础接口
@@ -147,8 +155,9 @@ class WallpaperAPI:
         return json_response({"success": True, "job_id": job_id})
 
     async def _run_import(self, job_id: str, paths: list[str], sound: bool, width: int, crf: int) -> None:
-        added, failed = [], []
+        added, failed, skipped = [], [], []
         loop = asyncio.get_running_loop()
+        existing = {str(i.get("source", "")).lower() for i in self.store.items() if i.get("source")}
         for index, raw in enumerate(paths, start=1):
             path = Path(raw)
             self.store.jobs.update(job_id, current=path.name, done=index - 1)
@@ -157,6 +166,9 @@ class WallpaperAPI:
                 continue
             if path.suffix.lower() not in IMAGE_EXTS | VIDEO_EXTS:
                 failed.append({"path": raw, "error": "不支持的文件类型"})
+                continue
+            if str(path).lower() in existing:
+                skipped.append({"path": raw, "reason": "这张已经在壁纸库里了"})
                 continue
             try:
                 item = await loop.run_in_executor(
@@ -171,15 +183,17 @@ class WallpaperAPI:
                     ),
                 )
                 added.append(item)
+                existing.add(str(path).lower())
             except Exception as exc:
                 logger.error(f"[壁纸工坊] 导入失败 {raw}: {exc}")
                 failed.append({"path": raw, "error": str(exc)})
         self.store.jobs.update(job_id, done=len(paths))
         result = self._state()
+        tail = f"，跳过 {len(skipped)} 张已经在库里的" if skipped else ""
         self.store.jobs.finish(
             job_id,
-            result={"added": added, "failed": failed, "state": result},
-            message=f"导入完成：成功 {len(added)}，失败 {len(failed)}",
+            result={"added": added, "failed": failed, "skipped": skipped, "state": result},
+            message=f"导入完成：成功 {len(added)}，失败 {len(failed)}{tail}",
         )
 
     async def handle_upload(self):
@@ -349,13 +363,58 @@ class WallpaperAPI:
             }
         )
 
+    async def _retry_unlinks(self, rounds: int = 3, delay: float = 1.5) -> None:
+        """删不掉的文件（正被播放/转码占着）隔一会儿再删几次。"""
+        for _ in range(max(1, rounds)):
+            await asyncio.sleep(delay)
+            left = self.store.pending_unlinks()
+            if not left:
+                return
+            await asyncio.get_running_loop().run_in_executor(None, self.store.retry_pending_unlinks)
+
+    async def _dedupe_items(self):
+        """同一个源文件被导入好几次的话，只留最早那张，其余清掉。"""
+        dup_ids = self.store.duplicate_ids()
+        if not dup_ids:
+            return json_response(
+                {"success": False, "message": "壁纸库里没有重复的，挺干净", "state": self._state()}
+            )
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(None, self.store.delete_items, dup_ids)
+        done = result.get("done") or []
+        leftover = result.get("leftover") or []
+        if done:
+            self.plugin.apply_now()
+        message = f"清掉 {len(done)} 张重复的，每组留最早那张"
+        if leftover:
+            message += f"，{len(leftover)} 张的文件被占用，稍后自动再删"
+            asyncio.create_task(self._retry_unlinks(4, 1.5))
+        return json_response(
+            {"success": True, "done": done, "leftover": leftover, "message": message, "state": self._state()}
+        )
+
     async def handle_delete_item(self):
         payload = await request.json(default={}) or {}
         item_id = str(payload.get("id", "")).strip()
-        ok = self.store.delete_item(item_id)
+        if not item_id:
+            return json_response({"success": False, "message": "没收到要删的壁纸 id"})
+        loop = asyncio.get_running_loop()
+        ok = await loop.run_in_executor(None, self.store.delete_item, item_id)
+        leftover: list[str] = []
         if ok:
             self.plugin.apply_now()
-        return json_response({"success": ok, "state": self._state()})
+            retried = await loop.run_in_executor(None, self.store.retry_pending_unlinks)
+            leftover = retried.get("pending") or []
+            if leftover:
+                asyncio.create_task(self._retry_unlinks(4, 1.5))
+                message = "已从壁纸库移除，文件正被占用，稍后会自动再删一次"
+            else:
+                message = "删掉了"
+        else:
+            message = "壁纸库里没找到这张，可能已经被删过了"
+        return json_response(
+            {"success": ok, "message": message, "leftover": leftover, "state": self._state()}
+        )
 
     async def handle_batch_items(self):
         """壁纸库里的批量操作：批量删除、批量加进轮换集。"""
@@ -365,24 +424,35 @@ class WallpaperAPI:
         if isinstance(raw_ids, str):
             raw_ids = [raw_ids]
         ids = [str(i).strip() for i in raw_ids if str(i).strip()]
+        if action in {"dedupe", "uniq"}:
+            return await self._dedupe_items()
         if not ids:
             return json_response({"success": False, "message": "还没选中壁纸"})
 
         if action in {"delete", "remove"}:
             loop = asyncio.get_running_loop()
-            done: list[str] = []
-            missing: list[str] = []
-            for item_id in ids:
-                ok = await loop.run_in_executor(None, self.store.delete_item, item_id)
-                if ok:
-                    done.append(item_id)
-                else:
-                    missing.append(item_id)
+            result = await loop.run_in_executor(None, self.store.delete_items, ids)
+            done = result.get("done") or []
+            missing = result.get("missing") or []
+            leftover = result.get("leftover") or []
             if done:
                 self.plugin.apply_now()
-            message = f"删掉 {len(done)} 张" + (f"，{len(missing)} 张没找着" if missing else "")
+            parts = [f"删掉 {len(done)} 张"]
+            if missing:
+                parts.append(f"{len(missing)} 张没找着")
+            if leftover:
+                parts.append(f"{len(leftover)} 张的文件正被占用，稍后自动再删")
+                asyncio.create_task(self._retry_unlinks(4, 1.5))
+            message = "，".join(parts)
             return json_response(
-                {"success": True, "done": done, "missing": missing, "message": message, "state": self._state()}
+                {
+                    "success": bool(done),
+                    "done": done,
+                    "missing": missing,
+                    "leftover": leftover,
+                    "message": message,
+                    "state": self._state(),
+                }
             )
 
         if action in {"collect", "add"}:

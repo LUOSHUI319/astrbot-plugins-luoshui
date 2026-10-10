@@ -303,6 +303,9 @@ class WallpaperStore:
 
         self.lib = self._load_lib()
         self._last_live: dict = {}
+        # 删壁纸时文件可能正被播放器/ffmpeg 占着（Windows 上是 WinError 32），
+        # 删不掉的先进这里排队，之后自动重试，不让它悄悄变成幽灵文件。
+        self._pending_unlink: list[dict[str, Any]] = []
 
     # ---------------------------------------------------------------- 基础
 
@@ -738,6 +741,54 @@ class WallpaperStore:
 
     # ---------------------------------------------------------------- 删除
 
+    def _unlink_rel(self, rel: str) -> bool:
+        """删掉 media 下的文件。被别的进程占着（Windows 常见）就先排队，稍后重试。"""
+        if not rel:
+            return True
+        path = self.base / rel
+        try:
+            if path.exists():
+                path.unlink()
+            with self._lock:
+                self._pending_unlink = [e for e in self._pending_unlink if e.get("rel") != rel]
+            return True
+        except Exception as exc:
+            with self._lock:
+                keep = [e for e in self._pending_unlink if e.get("rel") != rel]
+                keep.append({"rel": rel, "at": time.time(), "error": str(exc), "times": 1})
+                self._pending_unlink = keep
+            return False
+
+    def retry_pending_unlinks(self) -> dict:
+        """把排队等着删的文件再删一次，还是被占着就留队（最多 8 次）。"""
+        with self._lock:
+            pending = list(self._pending_unlink)
+            self._pending_unlink = []
+        done: list[str] = []
+        still: list[dict] = []
+        for entry in pending:
+            rel = str(entry.get("rel") or "")
+            if not rel:
+                continue
+            path = self.base / rel
+            try:
+                if path.exists():
+                    path.unlink()
+                done.append(rel)
+            except Exception as exc:
+                times = int(entry.get("times") or 1)
+                if times < 8:
+                    entry["times"] = times + 1
+                    entry["error"] = str(exc)
+                    still.append(entry)
+        with self._lock:
+            self._pending_unlink.extend(still)
+        return {"done": done, "pending": [e.get("rel") for e in still]}
+
+    def pending_unlinks(self) -> list[dict]:
+        with self._lock:
+            return [dict(e) for e in self._pending_unlink]
+
     def delete_item(self, item_id: str) -> bool:
         item = self.find_item(item_id)
         if not item:
@@ -749,13 +800,46 @@ class WallpaperStore:
         for kind in ("video", "still"):
             rel = item.get(kind)
             if rel:
-                try:
-                    (self.base / rel).unlink(missing_ok=True)
-                except Exception:
-                    pass
+                self._unlink_rel(str(rel))
         self.clear_thumbs(item.get("id"))
         self.save_lib()
         return True
+
+    def delete_items(self, item_ids: Iterable[str]) -> dict:
+        """批量删除，返回成功 / 找不到 / 文件被占用还留在磁盘上的。"""
+        loop_ids = [str(i).strip() for i in item_ids if str(i).strip()]
+        done: list[str] = []
+        missing: list[str] = []
+        for item_id in loop_ids:
+            if self.delete_item(item_id):
+                done.append(item_id)
+            else:
+                missing.append(item_id)
+        retried = self.retry_pending_unlinks()
+        return {
+            "done": done,
+            "missing": missing,
+            "leftover": retried.get("pending") or [],
+        }
+
+    def duplicate_groups(self) -> list[dict]:
+        """同一个源文件被反复导入时，会在库里留下好几张一模一样的。"""
+        groups: dict[str, list[dict]] = {}
+        for item in self.items():
+            src = str(item.get("source") or "").strip().lower()
+            key = src or ("name:" + str(item.get("name") or "").strip().lower())
+            if not key:
+                continue
+            groups.setdefault(key, []).append(item)
+        return [{"key": key, "items": items} for key, items in groups.items() if len(items) > 1]
+
+    def duplicate_ids(self) -> list[str]:
+        """每组重复里留下最早那张，其余的都算多余的。"""
+        extra: list[str] = []
+        for group in self.duplicate_groups():
+            items = sorted(group["items"], key=lambda i: float(i.get("added_at") or 0))
+            extra.extend(str(i.get("id")) for i in items[1:])
+        return extra
 
     # ---------------------------------------------------------------- 应用
 
