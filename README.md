@@ -1,6 +1,6 @@
 # 洛水插件合集 · AstrBot Plugins
 
-给 [AstrBot](https://github.com/AstrBotDevs/AstrBot) 写的一批小插件，都是从日常使用里攒出来的：会话开关、用量统计、回复延时、引用概率、用户卡片、禁言、进群欢迎、壁纸工坊。
+给 [AstrBot](https://github.com/AstrBotDevs/AstrBot) 写的一批小插件，都是从日常使用里攒出来的：会话开关、用量统计、回复延时、引用概率、用户卡片、禁言、进群欢迎、壁纸工坊，以及把任务派给本机 DeepSeek Harness 的 DSH 子代理桥。
 
 **这个仓库由洛水（AI 助手）和望山（GitHub：[@LuoShui319](https://github.com/LuoShui319)）共同制作。**
 洛水负责写代码、改 bug、写文档；望山负责提需求、测试、挑毛病、定方向，以及把这堆东西打包发出去。
@@ -20,6 +20,7 @@
 | 禁言小工具 | `astrbot_plugin_group_mute` | v1.0.0 | 群里发「禁言 @某人 秒数」，也注册成 LLM 工具 |
 | 进群欢迎 | `astrbot_plugin_group_welcome` | v1.0.0 | 新人进群自动发欢迎语 |
 | 洛水壁纸工坊 | `astrbot_plugin_wallpaper_luoshui` | v1.0.8 | 给 AstrBot 面板换静态/动态壁纸，参数都能在页面里调 |
+| DSH 子代理桥 | `astrbot_plugin_dsh_bridge` | v0.2.0 | 把任务派给本机的 DeepSeek Harness 子代理跑，机器人还能当操作手：派单、回看过程、多轮迭代、验收后汇报 |
 
 所有插件的 `author` 都写的是「洛水」。
 
@@ -50,6 +51,7 @@ git clone https://github.com/LuoShui319/astrbot-plugins-luoshui.git
 然后把 `plugins/` 里需要的文件夹复制进 `data/plugins/`。仓库本身不放在插件目录里也没关系，插件是按文件夹识别的。
 
 > 除「用户卡片」需要 `>=4.16`、「壁纸工坊」需要 `>=4.14.0` 以外，其余插件在 4.x 上都能用。
+> 「DSH 子代理桥」还需要本机有 Node 和 DSH（`@deepseek-ai/dsh`），没有的话插件里有个 `/dsh装dsh` 能装便携版。
 
 ---
 
@@ -205,6 +207,39 @@ git clone https://github.com/LuoShui319/astrbot-plugins-luoshui.git
 1. 插件会读取并改写 `data/dist/index.html`，注入的代码块用 `<!-- astrbot-wallpaper:start -->` / `<!-- astrbot-wallpaper:end -->` 包裹，删除这两个标记之间的内容即可完全卸载。
 2. 转码需要 ffmpeg。插件包里已经内置一份（插件目录的 `bin\ffmpeg.exe`），优先用它；没有就按 AstrBot 根目录 → 系统 PATH 的顺序找，全都没有会在后台自动下一份放进插件目录，也能在插件页面点「自动安装 ffmpeg」。
 3. 面板样式是浏览器缓存的，改完记得 Ctrl+F5 强刷。
+
+---
+
+### 9. DSH 子代理桥 `astrbot_plugin_dsh_bridge`
+
+把任务派给本机的 **DeepSeek Harness（DSH）** 去跑，再把结果收回聊天。子代理在指定工作区里干活：读文件、跑命令、调用它自己安装的插件（比如几个生图插件）。
+
+它不只是个中转：插件会把一份「操作手册」注入给机器人，让机器人按 **计划 → 派单 → 自查 → 迭代 → 汇报** 来用这条通道——先想怎么做、把提示词派出去、回读会话记录看子代理实际干了什么、不满意再派一轮，验收过了才把结果汇报出来。
+
+| 指令 | 作用 |
+| --- | --- |
+| `/dsh 任务` | 派一条任务给子代理，跑完把结果发回来 |
+| `/dsh续 session-xxxx 任务` | 接着某次会话继续，多轮打磨同一个任务 |
+| `/dsh会话` | 列当前工作区里最近的会话 |
+| `/dsh过程 [会话id]` | 看子代理那轮到底调了什么工具、命令、结果如何 |
+| `/操作手 开｜关｜状态` | 切换操作手模式（开着机器人才按上面那套循环干活） |
+| `/dsh网页` | 拿 `dsh web` 的地址，没开就自动起一个，浏览器里能可视化看会话 |
+| `/dsh停web` | 关掉插件起过的 web 进程 |
+| `/dsh装dsh` | 一键装便携 DSH，不用全局安装 |
+| `/dsh体检` | 环境自检：Node / dsh / profile / key / 工作区权限，缺什么怎么补都告诉你 |
+| `/dsh状态` | 开关、队列忙不忙、profile、工作区、超时、白名单 |
+
+**给模型用的三个工具**：`dsh_task`（派单，支持接着上一轮会话继续）、`dsh_trace`（回看会话记录）、`dsh_sessions`（列会话）。
+
+**配置要点**：
+
+- `workspace` 留空 = 插件数据目录下的 `workspace/`，换机器不用改路径；建议纯英文路径（DSH 内部 shell 对中文路径会乱码）
+- `api_key` 留空 = 自动用 AstrBot 里已经配好的那个 DeepSeek key（以 `DEEPSEEK_API_KEY` 环境变量喂给子代理，DSH 的凭据优先级里启动环境最高，所以立刻生效，不用改 DSH 配置）
+- 默认模型用 DSH 自带的 `deepseek-flash`，想换填 `model`
+- `share_python_path` 会把 AstrBot 的 Python 目录前置进子代理 PATH（不然它在沙箱里常常找不到 python/node）
+- `allow_user_ids` 建议填自己的 QQ，免得别人也能派活
+
+**环境要求**：本机要有 Node 和 DSH；DSH 侧需要的插件（比如生图）装在哪个 profile，就把配置里的 `profile` 指向那个。
 
 ---
 
