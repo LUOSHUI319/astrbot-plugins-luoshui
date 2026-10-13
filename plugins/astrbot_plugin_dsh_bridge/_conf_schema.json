@@ -1,0 +1,107 @@
+{
+  "enabled": {
+    "description": "总开关",
+    "type": "bool",
+    "default": true
+  },
+  "workspace": {
+    "description": "子代理的工作区；留空 = 用插件数据目录下的 workspace（换电脑不用改）。中文路径在 DSH 内部 shell 里会乱码，建议纯英文",
+    "type": "string",
+    "default": ""
+  },
+  "profile": {
+    "description": "DSH profile 名，默认 headless（一次性任务）；装了插件的那个 profile 才有对应工具",
+    "type": "string",
+    "default": "headless"
+  },
+  "dsh_cmd": {
+    "description": "dsh 可执行文件：填 dsh 就自动找（PATH → npm 全局目录 → 插件自带运行时），找不到再填完整路径",
+    "type": "string",
+    "default": "dsh"
+  },
+  "timeout_seconds": {
+    "description": "单次任务最长等待秒数，超时会中止并杀进程树",
+    "type": "int",
+    "default": 300
+  },
+  "max_final_chars": {
+    "description": "回传给聊天的最终答案最大字符数，超出截断",
+    "type": "int",
+    "default": 3000
+  },
+  "allow_user_ids": {
+    "description": "白名单 QQ 号，逗号分隔；留空表示不限制（建议先填自己的号，免得别人也能派活）",
+    "type": "string",
+    "default": ""
+  },
+  "log_runs": {
+    "description": "把每次运行写进插件数据目录的 runs.jsonl",
+    "type": "bool",
+    "default": true
+  },
+  "web_auto_start": {
+    "description": "用 /dsh网页 时，如果 web 没在跑就自动起一个",
+    "type": "bool",
+    "default": true
+  },
+  "web_port": {
+    "description": "dsh web 用的端口",
+    "type": "int",
+    "default": 3939
+  },
+  "web_workspace": {
+    "description": "dsh web 的工作目录（留空就用上面的 workspace；两边一致会话才能在界面里互见）",
+    "type": "string",
+    "default": ""
+  },
+  "api_key": {
+    "description": "DSH 用的 DeepSeek API key；留空 = 自动用 bot 里配置的那个 DeepSeek key",
+    "type": "string",
+    "default": ""
+  },
+  "api_base": {
+    "description": "自定义端点（会作为 DEEPSEEK_BASE_URL 传给子代理）；留空 = 用 DSH 默认官方端点",
+    "type": "string",
+    "default": ""
+  },
+  "model": {
+    "description": "默认模型；留空 = 用 DSH 自带的 deepseek-flash",
+    "type": "string",
+    "default": ""
+  },
+  "auto_fix_acl": {
+    "description": "Windows 上自动给工作区授当前用户完全控制（修沙箱 grantWrite 被拒）",
+    "type": "bool",
+    "default": true
+  },
+  "dsh_install_dir": {
+    "description": "便携 DSH 装到哪；留空 = 插件数据目录下的 dsh-runtime",
+    "type": "string",
+    "default": ""
+  },
+  "dsh_version": {
+    "description": "装便携 DSH 时用的版本；默认 latest",
+    "type": "string",
+    "default": "latest"
+  },
+  "inject_manual": {
+    "description": "给我注入「DSH 子代理操作手册」，让我按计划—派单—自查—迭代—汇报来做，而不是当传声筒",
+    "type": "bool",
+    "default": true
+  },
+  "manual_text": {
+    "description": "自定义操作手册文本；留空用内置那份",
+    "type": "string",
+    "default": ""
+  },
+  "share_python_path": {
+    "description": "把 AstrBot 的 Python 目录前置进子代理的 PATH，免得它在沙箱里找不到 python/node",
+    "type": "bool",
+    "default": true
+  },
+  "operator_default": {
+    "description": "插件加载时操作手模式默认是否开启（平时建议关，用 /操作手 开 临时切）",
+    "type": "bool",
+    "default": false
+  }
+}
