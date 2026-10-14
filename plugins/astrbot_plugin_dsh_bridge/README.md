@@ -93,7 +93,7 @@
 | `model` | 空 | 默认模型。留空 = DSH 自带的 `deepseek-flash`；填了会写进 profile patch 的 `agent-default-model` |
 | `share_python_path` | true | 把 AstrBot 的 Python 目录前置进子代理的 PATH（否则它在沙箱里找不到 python/node） |
 | `auto_fix_acl` | true | 撞上沙箱 `grantWrite` 被拒时自动 icacls 授权并重跑 |
-| `allow_user_ids` | 空 | 白名单 QQ，逗号分隔；留空不限制（建议填自己的号） |
+| `allow_user_ids` | 空 | 白名单 QQ，逗号分隔；留空表示不限制（自己用时填上更安全） |
 | `log_runs` | true | 每次运行落一行到数据目录 `runs.jsonl` |
 | `inject_manual` | true | 是否允许注入操作手册（还要操作手模式开着才生效） |
 | `manual_text` | 空 | 自定义操作手册文本 |
@@ -109,7 +109,7 @@ DSH 的会话按「工作区」存：`~/.dsh/sessions/<工作区键>/session-xxx
 可以打开、接着手改、看过程和产物。
 
 工作区键的换算法（`~` 后面是大写十六进制的 Unicode 码点）：
-`D:\workspace` → `--D-workspace--`；带中文的路径会把非 ASCII 字符转成 `~` 加 Unicode 码点，例如 `D:\工作区` → `--D-~5DE5~4F5C~533A--`
+`D:\dsh_work` → `--D-dsh_work--`；含中文的路径例如 `D:\dsh工作区` → `--D-dsh~5DE5~4F5C~533A--`
 
 ## 8. 护栏
 
@@ -165,3 +165,5 @@ data/plugin_data/astrbot_plugin_dsh_bridge/
 ├── dsh_web.json       本插件起过的 dsh web 进程信息（pid + 带令牌的地址）
 └── workspace/         workspace 留空时的默认工作区
 ```
+
+> 各版本的改动看同目录下的 `CHANGELOG.md`。

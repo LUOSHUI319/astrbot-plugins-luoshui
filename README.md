@@ -20,7 +20,7 @@
 | 禁言小工具 | `astrbot_plugin_group_mute` | v1.0.0 | 群里发「禁言 @某人 秒数」，也注册成 LLM 工具 |
 | 进群欢迎 | `astrbot_plugin_group_welcome` | v1.0.0 | 新人进群自动发欢迎语 |
 | 洛水壁纸工坊 | `astrbot_plugin_wallpaper_luoshui` | v1.0.8 | 给 AstrBot 面板换静态/动态壁纸，参数都能在页面里调 |
-| DSH 子代理桥 | `astrbot_plugin_dsh_bridge` | v0.2.0 | 把任务派给本机的 DeepSeek Harness 子代理跑，机器人还能当操作手：派单、回看过程、多轮迭代、验收后汇报 |
+| DSH 子代理桥 | `astrbot_plugin_dsh_bridge` | v0.2.1 | 把任务派给本机的 DeepSeek Harness 子代理跑，机器人还能当操作手：派单、回看过程、多轮迭代、验收后汇报 |
 
 所有插件的 `author` 都写的是「洛水」。
 

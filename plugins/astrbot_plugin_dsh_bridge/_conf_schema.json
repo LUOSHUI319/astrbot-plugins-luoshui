@@ -30,7 +30,7 @@
     "default": 3000
   },
   "allow_user_ids": {
-    "description": "白名单 QQ 号，逗号分隔；留空表示不限制（建议先填自己的号，免得别人也能派活）",
+    "description": "白名单 QQ 号，逗号分隔；留空表示不限制",
     "type": "string",
     "default": ""
   },

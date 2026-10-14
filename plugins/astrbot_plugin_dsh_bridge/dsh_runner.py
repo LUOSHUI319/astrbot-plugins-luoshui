@@ -7,7 +7,7 @@
 import asyncio
 from dsh_runner import run_task
 
-result = asyncio.run(run_task("列出当前目录的文件", workspace=r"E:\\dsh_agent_ws"))
+result = asyncio.run(run_task("列出当前目录的文件", workspace=r"D:\\dsh_work"))
 print(result.final)
 ```
 
@@ -86,16 +86,7 @@ async def _run_once(
     if not os.path.isdir(ws):
         os.makedirs(ws, exist_ok=True)
 
-    base = [dsh_cmd, "--profile", profile, "--json"]
-    if session_id:
-        base += ["--session-id", session_id]
-    base.append(task)
-
-    if os.name == "nt":
-        argv = ["cmd", "/c"] + base
-    else:
-        resolved = shutil.which(dsh_cmd) or dsh_cmd
-        argv = [resolved] + base[1:]
+    argv = build_argv(dsh_cmd, profile, task, session_id)
 
     env = os.environ.copy()
     env.setdefault("PYTHONIOENCODING", "utf-8")
@@ -108,10 +99,24 @@ async def _run_once(
         proc = await asyncio.create_subprocess_exec(
             *argv,
             cwd=ws,
+            stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=env,
         )
+
+        # 任务文本走 stdin：换行、引号、管道符、百分号都不会再被 shell 或参数解析吃掉
+        if proc.stdin is not None:
+            try:
+                proc.stdin.write((task or "").encode("utf-8"))
+                await proc.stdin.drain()
+            except Exception:  # noqa: BLE001
+                pass
+            finally:
+                try:
+                    proc.stdin.close()
+                except Exception:  # noqa: BLE001
+                    pass
 
         async def pump_stdout() -> None:
             assert proc is not None and proc.stdout is not None
@@ -180,6 +185,23 @@ async def _run_once(
                 result.error = (result.stderr_tail or "").strip() or f"退出码 {result.exit_code}"
             elif not result.final:
                 result.error = (result.stderr_tail or "").strip() or "没有拿到最终答案"
+        # 兜底：万一这套 DSH 不认识 stdin 的 `-`，退回老写法再跑一次（参数直传）
+        if not result.ok and not result.timed_out and result.event_count == 0 and not result.final:
+            retry = await _run_task_as_argv(
+                task,
+                ws=ws,
+                profile=profile,
+                dsh_cmd=dsh_cmd,
+                timeout=timeout,
+                session_id=session_id,
+                env=env,
+                on_event=on_event,
+            )
+            if retry.ok or retry.event_count:
+                retry.duration = round(time.time() - started, 1)
+                return retry
+            if retry.error and not result.error:
+                result.error = retry.error
     except FileNotFoundError:
         result.error = f"找不到可执行文件：{dsh_cmd}（确认 dsh 在 PATH 里）"
     except Exception as exc:  # noqa: BLE001
@@ -188,6 +210,94 @@ async def _run_once(
             _kill_tree(proc)
     finally:
         result.duration = round(time.time() - started, 1)
+    return result
+
+
+async def _run_task_as_argv(
+    task: str,
+    *,
+    ws: str,
+    profile: str,
+    dsh_cmd: str,
+    timeout: int,
+    session_id: str,
+    env: dict,
+    on_event=None,
+) -> RunResult:
+    """兜底路径：把任务直接挂在命令行参数上再跑一次。
+
+    只有在这套 DSH 不认识 stdin 的 `-`（跑完一个事件都没有）时才会用到。
+    任务里有换行、引号、百分号时这种方式本来就会被截断，所以它只是保险丝，不是主路。
+    """
+    result = RunResult()
+    argv = build_argv(dsh_cmd, profile, task, session_id, stdin_mode=False)
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *argv,
+            cwd=ws,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=env,
+        )
+    except Exception as exc:  # noqa: BLE001
+        result.error = f"{type(exc).__name__}: {exc}"
+        return result
+
+    async def read_out() -> None:
+        assert proc.stdout is not None
+        while True:
+            raw = await proc.stdout.readline()
+            if not raw:
+                break
+            line = _decode(raw).strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except Exception:
+                continue
+            result.event_count += 1
+            etype = event.get("type")
+            if etype == "session":
+                result.session_id = str(event.get("sessionId") or "")
+            elif etype == "thinking":
+                result.thinking_chars += len(str(event.get("text") or ""))
+            elif etype == "tool_call":
+                result.tool_calls.append(_summarize_tool_input(str(event.get("tool") or "?"), event.get("input")))
+            elif etype == "final":
+                result.final = str(event.get("text") or "")
+            if on_event is not None:
+                try:
+                    on_event(event)
+                except Exception:
+                    pass
+
+    async def read_err() -> None:
+        assert proc.stderr is not None
+        buf: list[str] = []
+        while True:
+            raw = await proc.stderr.readline()
+            if not raw:
+                break
+            text = _decode(raw).rstrip()
+            if text:
+                buf.append(text)
+                del buf[:-20]
+        result.stderr_tail = chr(10).join(buf)[-1500:]
+
+    try:
+        await asyncio.wait_for(asyncio.gather(read_out(), read_err()), timeout=timeout)
+        result.exit_code = await proc.wait()
+    except asyncio.TimeoutError:
+        result.timed_out = True
+        result.error = f"超过 {timeout} 秒还没跑完，已中止"
+        _kill_tree(proc)
+    except Exception as exc:  # noqa: BLE001
+        result.error = f"{type(exc).__name__}: {exc}"
+        _kill_tree(proc)
+    if not result.error and result.exit_code not in (0, None):
+        result.error = (result.stderr_tail or "").strip() or f"退出码 {result.exit_code}"
+    result.ok = (not result.timed_out) and result.exit_code == 0 and bool(result.final)
     return result
 
 
@@ -446,3 +556,83 @@ def format_probe(info: dict) -> str:
     else:
         lines.append("看起来什么都不缺，直接派活就行")
     return chr(10).join(lines)
+
+
+def find_node() -> str:
+    """找 node：先 PATH，再几个常见安装位置。
+
+    为什么费这个劲：找不到 node 时只能退回 `cmd /c dsh.cmd`，而走 cmd 传参正是"任务被截断成开头一句"
+    的老毛病来源（虽然现在任务已经改走 stdin，但能不碰 shell 就不碰）。
+    """
+    found = shutil.which("node") or shutil.which("node.exe")
+    if found:
+        return found
+    guesses = [
+        os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "nodejs", "node.exe"),
+        os.path.join(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"), "nodejs", "node.exe"),
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "nodejs", "node.exe"),
+        os.path.join(os.environ.get("APPDATA", ""), "nvm", "node.exe"),
+        os.path.join(os.path.expanduser("~"), "scoop", "apps", "nodejs", "current", "node.exe"),
+        "/usr/local/bin/node",
+        "/usr/bin/node",
+    ]
+    for path in guesses:
+        if path and os.path.exists(path):
+            return path
+    return ""
+
+
+def find_dsh_entry(dsh_cmd: str = "") -> tuple[str, str]:
+    """找出 (node, dsh 的入口 js)，用于绕开 cmd.exe 直接调用。
+
+    为什么要绕：Windows 上 `cmd /c dsh ... "<很长的多行任务>"` 会在换行处把参数截断，
+    子代理收到的只剩第一行（真实踩过的坑）。直接 node + 入口脚本传参就没这问题。
+    """
+    import re
+
+    node = find_node()
+    candidates: list[str] = []
+    resolved = find_dsh(dsh_cmd)
+    root = os.path.dirname(resolved)
+    candidates.append(os.path.join(root, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js"))
+    appdata = os.environ.get("APPDATA") or os.path.join(os.path.expanduser("~"), "AppData", "Roaming")
+    candidates.append(os.path.join(appdata, "npm", "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js"))
+    candidates.append(
+        os.path.join(os.path.expanduser("~"), ".dsh-runtime", "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js")
+    )
+    # 便携安装目录也可能在插件数据目录下，交给上层通过 extra 传进来
+    for cand in candidates:
+        if os.path.exists(cand):
+            return (node or "node", cand)
+    # 兜底：从 dsh.cmd 里抠出路径
+    try:
+        with open(resolved, encoding="utf-8", errors="ignore") as fh:
+            text = fh.read()
+        match = re.search(r'"([^"]*@deepseek-ai[^"]*bin\.js)"', text)
+        if match:
+            path = match.group(1)
+            if os.path.exists(path):
+                return (node or "node", path)
+    except Exception:
+        pass
+    return ("", "")
+
+
+def build_argv(dsh_cmd: str, profile: str, task: str = "", session_id: str = "", stdin_mode: bool = True) -> list[str]:
+    """拼命令行。
+
+    默认把任务交给 stdin（argv 末尾用 `-` 告诉 DSH 去读 stdin），不再把任务文本塞进命令行参数：
+    命令行传参走过 shell 时会在换行、引号、百分号处被截断，子代理就只能收到开头一句。
+    直接把任务挂参数的老写法只在 stdin_mode=False 时保留，用作兜底。
+    """
+    tail = ["--profile", profile, "--json"]
+    if session_id:
+        tail += ["--session-id", session_id]
+    tail.append("-" if stdin_mode else task)
+    node, entry = find_dsh_entry(dsh_cmd)
+    if node and entry:
+        return [node, entry] + tail
+    resolved = find_dsh(dsh_cmd)
+    if os.name == "nt" and resolved.lower().endswith(".cmd"):
+        return ["cmd", "/c", resolved] + tail
+    return [resolved] + tail

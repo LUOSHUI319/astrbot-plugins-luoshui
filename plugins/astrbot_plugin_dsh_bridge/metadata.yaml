@@ -1,6 +1,6 @@
 name: astrbot_plugin_dsh_bridge
 display_name: DSH 子代理桥
-desc: 把任务派给本机 DeepSeek Harness 子代理执行，并让我当操作手：派单、回看过程、多轮迭代、验收后汇报（读文件/跑命令/生图都行）
-version: v0.2.0
+desc: 把任务派给本机 DeepSeek Harness 子代理执行，主智能体当操作手：派单、回看过程、多轮迭代、验收后汇报（子代理能读文件、跑命令、生图）
+version: v0.2.1
 author: 洛水
 repo: https://github.com/LUOSHUI319/astrbot-plugins-luoshui
